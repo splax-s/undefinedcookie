@@ -101,9 +101,5 @@ ENV/
 .mypy_cache/
 .idea/
 
-config/config.ini
-config/config.toml
-*.sqlite
 *.sqlite-journal
-data/
 .directory

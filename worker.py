@@ -338,7 +338,7 @@ class Worker(threading.Thread):
 
     def __wait_for_successfulpayment(self,
                                      cancellable: bool = False) -> Union[telegram.SuccessfulPayment, CancelSignal]:
-        """Continue getting updates until a successfulpayment is received."""
+        """Continue getting updates until a successful payment is received."""
         log.debug("Waiting for a SuccessfulPayment...")
         while True:
             # Get the next update

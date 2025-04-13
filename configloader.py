@@ -30,7 +30,7 @@ with open("config/template_config.toml", encoding="utf8") as template_cfg_file, 
     template_cfg = nuconfig.NuConfig(template_cfg_file)
     user_cfg = nuconfig.NuConfig(user_cfg_file)
     if not template_cfg.cmplog(user_cfg):
-        log.fatal("There were errors while parsing the config.toml file. Please fix them and restart greed!")
+        log.fatal("There were errors while parsing the config.toml file. Please fix them and restart splax!")
         exit(2)
     else:
         log.debug("Configuration parsed successfully!")
