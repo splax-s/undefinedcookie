@@ -13,6 +13,28 @@ in_stock_format_string = "{quantity} disponibili"
 # Copies of a product in cart
 in_cart_format_string = "{quantity} nel carrello"
 
+ask_product_category = "Which category should this product belong to?"
+menu_browse_categories = "📂 Browse by category"
+ask_browse_category = "Which category would you like to browse?"
+
+menu_categories = "🗂 Categories"
+menu_add_category = "✨ New category"
+menu_rename_category = "✏️ Rename category"
+menu_delete_category = "❌ Delete category"
+
+conversation_admin_categories = "What would you like to do with categories?"
+
+ask_new_category_name = "What should the new category be called?"
+ask_category_to_rename = "Which category would you like to rename?"
+ask_category_to_delete = "Which category would you like to delete?"
+
+confirm_delete_category = "Are you sure you want to delete category “{name}”?"
+error_duplicate_category = "⚠️ A category with that name already exists."
+success_category_added = "✅ Category added!"
+success_category_renamed = "✅ Category renamed!"
+success_category_deleted = "✅ Category deleted!"
+
+
 # Product information
 product_format_string = "<b>{name}</b>\n" \
                         "{description}\n" \

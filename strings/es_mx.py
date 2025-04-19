@@ -427,7 +427,30 @@ error_no_orders = "⚠️ Aún no has realizado ninguna orden, no hay nada que m
 # Error: selected user does not exist
 error_user_does_not_exist = "⚠️ El usuario seleccionado no existe."
 
+
+ask_product_category = "Which category should this product belong to?"
+
+menu_browse_categories = "📂 Browse by category"
+ask_browse_category = "Which category would you like to browse?"
+
 # Fatal: conversation raised an exception
 fatal_conversation_exception = "☢️ Oh no! Un <b>error</b> ha interrumpido esta conversación\n" \
                                "El error ha sido reportado al propietario del bot para que pueda solucionarlo.\n" \
                                "Para reiniciar la conversación, envía el comando /start nuevamente."
+
+menu_categories = "🗂 Categories"
+menu_add_category = "✨ New category"
+menu_rename_category = "✏️ Rename category"
+menu_delete_category = "❌ Delete category"
+
+conversation_admin_categories = "What would you like to do with categories?"
+
+ask_new_category_name = "What should the new category be called?"
+ask_category_to_rename = "Which category would you like to rename?"
+ask_category_to_delete = "Which category would you like to delete?"
+
+confirm_delete_category = "Are you sure you want to delete category “{name}”?"
+error_duplicate_category = "⚠️ A category with that name already exists."
+success_category_added = "✅ Category added!"
+success_category_renamed = "✅ Category renamed!"
+success_category_deleted = "✅ Category deleted!"

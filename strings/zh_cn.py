@@ -22,6 +22,10 @@ product_format_string = "<b>{name}</b>\n" \
 # Order number, displayed in the order info
 order_number = "订单号 #{id}"
 
+ask_product_category = "Which category should this product belong to?"
+menu_browse_categories = "📂 Browse by category"
+ask_browse_category = "Which category would you like to browse?"
+
 # Order info string, shown to the admins
 order_format_string = "来自 {user}\n" \
                       "创建于 {date}\n" \
@@ -41,6 +45,25 @@ user_order_format_string = "{status_emoji} <b>订单 {status_text}</b>\n" \
 # Transaction page is loading
 loading_transactions = "<i>正在载入交易中...\n" \
                        "请稍等片刻.....</i>"
+
+
+menu_categories = "🗂 Categories"
+menu_add_category = "✨ New category"
+menu_rename_category = "✏️ Rename category"
+menu_delete_category = "❌ Delete category"
+
+conversation_admin_categories = "What would you like to do with categories?"
+
+ask_new_category_name = "What should the new category be called?"
+ask_category_to_rename = "Which category would you like to rename?"
+ask_category_to_delete = "Which category would you like to delete?"
+
+confirm_delete_category = "Are you sure you want to delete category “{name}”?"
+error_duplicate_category = "⚠️ A category with that name already exists."
+success_category_added = "✅ Category added!"
+success_category_renamed = "✅ Category renamed!"
+success_category_deleted = "✅ Category deleted!"
+
 
 # Transactions page
 transactions_page = "Page <b>{page}</b>:\n" \

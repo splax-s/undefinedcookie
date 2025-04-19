@@ -18,6 +18,17 @@ TableDeclarativeBase = declarative_base()
 
 
 # Define all the database tables using the sqlalchemy declarative base
+class Category(TableDeclarativeBase):
+    """A product category for grouping products."""
+
+    __tablename__ = 'categories'
+
+    category_id = Column(Integer, primary_key=True)
+    name = Column(String, unique=True, nullable=False)
+    products = relationship("Product", back_populates="category")
+
+
+# Define all the database tables using the sqlalchemy declarative base
 class User(TableDeclarativeBase):
     """A Telegram user who used the bot at least once."""
 
@@ -100,11 +111,12 @@ class Product(TableDeclarativeBase):
     image = Column(LargeBinary)
     # Product has been deleted
     deleted = Column(Boolean, nullable=False)
+    # Category relation
+    category_id = Column(Integer, ForeignKey('categories.category_id'), nullable=True)
+    category = relationship('Category', back_populates='products')
 
     # Extra table parameters
     __tablename__ = "products"
-
-    # No __init__ is needed, the default one is sufficient
 
     def text(self, w: "worker.Worker", *, style: str = "full", cart_qty: int = None):
         """Return the product details formatted with Telegram HTML. The image is omitted."""
@@ -196,6 +208,7 @@ class Transaction(TableDeclarativeBase):
 
     def __repr__(self):
         return f"<Transaction {self.transaction_id} for User {self.user_id}>"
+
 
 class BtcTransaction(TableDeclarativeBase):
     """A btc wallet transaction.
@@ -330,7 +343,9 @@ class OrderItem(TableDeclarativeBase):
     __tablename__ = "orderitems"
 
     def text(self, w: "worker.Worker"):
-        return f"{self.product.name} - {str(w.Price(self.product.price))}"
+        # return f"{self.product.name} - {str(w.Price(self.product.price))}"
+        cat = self.product.category.name if self.product.category else "Uncategorized"
+        return f"{self.product.name} [{cat}] - {str(w.Price(self.product.price))}"
 
     def __repr__(self):
         return f"<OrderItem {self.item_id}>"
