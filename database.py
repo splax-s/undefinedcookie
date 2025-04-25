@@ -17,6 +17,19 @@ log = logging.getLogger(__name__)
 TableDeclarativeBase = declarative_base()
 
 
+class Account(TableDeclarativeBase):
+    __tablename__ = "accounts"
+
+    id          = Column(Integer, primary_key=True)
+    product_id  = Column(Integer, ForeignKey("products.id"), nullable=False)
+    username    = Column(String,  nullable=False)
+    password    = Column(String,  nullable=False)
+    used        = Column(Boolean, default=False, nullable=False)
+
+    # backref from Product
+    product     = relationship("Product", back_populates="accounts")
+
+
 # Define all the database tables using the sqlalchemy declarative base
 class Category(TableDeclarativeBase):
     """A product category for grouping products."""
@@ -114,6 +127,8 @@ class Product(TableDeclarativeBase):
     # Category relation
     category_id = Column(Integer, ForeignKey('categories.category_id'), nullable=True)
     category = relationship('Category', back_populates='products')
+
+    accounts = relationship("Account", back_populates="product")
 
     # Extra table parameters
     __tablename__ = "products"

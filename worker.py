@@ -646,7 +646,7 @@ class Worker(threading.Thread):
 
             # Done → break out to checkout
             elif cb.data == "cart_done":
-                # If no items were ever added, don’t create an order
+                # 1) Don’t allow empty carts
                 if not any(qty > 0 for _, qty in cart.values()):
                     self.bot.send_message(
                         self.chat.id,
@@ -656,7 +656,29 @@ class Worker(threading.Thread):
                         )
                     )
                     return
-                break
+
+                # 2) Ensure there’s enough “accounts” in the DB for each product
+                for product, qty in cart.values():
+                    if qty <= 0:
+                        continue
+
+                    available = (
+                        self.session
+                            .query(db.Account)
+                            .filter_by(product_id=product.id, used=False)
+                            .count()
+                    )
+                    if available < qty:
+                        self.bot.send_message(
+                            self.chat.id,
+                            f"⚠️ Sorry, we only have {available} “{product.name}” accounts available, "
+                            f"but you tried to buy {qty}."
+                        )
+                        return   # abort before letting them pay
+
+                # 3) All good — break out and continue to notes/payment
+            break
+
 
         # 6) Proceed with notes, order creation and payment just like before
         cancel = telegram.InlineKeyboardMarkup([[telegram.InlineKeyboardButton(
@@ -708,18 +730,50 @@ class Worker(threading.Thread):
         return product_list
 
     def __order_transaction(self, order, value):
-        # Create a new transaction and add it to the session
-        transaction = db.Transaction(user=self.user,
-                                     value=value,
-                                     order=order)
+        # 1) Create & commit the wallet transaction
+        transaction = db.Transaction(
+            user=self.user,
+            value=value,
+            order=order
+        )
         self.session.add(transaction)
-        # Commit all the changes
-        self.session.commit()
-        # Update the user's credit
         self.user.recalculate_credit()
-        # Commit all the changes
         self.session.commit()
-        # Notify admins about new transation
+
+        # 2) Auto-deliver accounts
+        for item in order.items:
+            acct = (
+                self.session.query(db.Account)
+                .filter_by(product_id=item.product.id, used=False)
+                .with_for_update()
+                .first()
+            )
+            if acct:
+                # Send credentials
+                self.bot.send_message(
+                    self.chat.id,
+                    self.loc.get(
+                        "deliver_account_message",
+                        product=item.product.name,
+                        username=acct.username,
+                        password=acct.password
+                    ),
+                    parse_mode=telegram.constants.ParseMode.HTML
+                )
+                acct.used = True
+            else:
+                # Out of stock for this product
+                self.bot.send_message(
+                    self.chat.id,
+                    self.loc.get(
+                        "deliver_account_missing",
+                        product=item.product.name
+                    )
+                )
+        # mark all used-flags at once
+        self.session.commit()
+
+        # 3) Notify admins as usual
         self.__order_notify_admins(order=order)
 
     def __order_notify_admins(self, order):
@@ -1061,6 +1115,137 @@ class Worker(threading.Thread):
                 self.session.commit()
                 self.bot.send_message(self.chat.id, self.loc.get("success_category_deleted"))
             return
+        
+
+    def __add_account_menu(self, product: db.Product):
+        """Prompt manager to add a new Account for a product."""
+        cancel = telegram.InlineKeyboardMarkup(
+            [[telegram.InlineKeyboardButton(self.loc.get("menu_cancel"), callback_data="cmd_cancel")]]
+        )
+        # ask username
+        self.bot.send_message(self.chat.id, self.loc.get("ask_account_username"), reply_markup=cancel)
+        username = self.__wait_for_regex(r"(.+)", cancellable=True)
+        if isinstance(username, CancelSignal): return
+        # ask password
+        self.bot.send_message(self.chat.id, self.loc.get("ask_account_password"), reply_markup=cancel)
+        password = self.__wait_for_regex(r"(.+)", cancellable=True)
+        if isinstance(password, CancelSignal): return
+
+        acct = db.Account(product=product,
+                          username=username,
+                          password=password,
+                          used=False)
+        self.session.add(acct)
+        self.session.commit()
+        self.bot.send_message(self.chat.id,
+                              self.loc.get("success_account_added",
+                                           product=product.name,
+                                           username=username))
+    
+    def __edit_account_menu(self, acct: db.Account):
+        """Allow editing or deleting an existing Account."""
+        cancel = telegram.InlineKeyboardMarkup(
+            [[telegram.InlineKeyboardButton(self.loc.get("menu_cancel"), callback_data="cmd_cancel")]]
+        )
+        # show current creds
+        self.bot.send_message(
+            self.chat.id,
+            self.loc.get("edit_account_header",
+                         username=acct.username,
+                         password=acct.password,
+                         used="yes" if acct.used else "no"),
+            reply_markup=cancel
+        )
+        # toggle “used”?
+        keyboard = telegram.InlineKeyboardMarkup([
+            [telegram.InlineKeyboardButton(self.loc.get("menu_toggle_used"), callback_data="toggle_used")],
+            [telegram.InlineKeyboardButton(self.loc.get("menu_delete_account"), callback_data="delete_account")],
+            [telegram.InlineKeyboardButton(self.loc.get("menu_done"), callback_data="cmd_done")]
+        ])
+        msg = self.bot.send_message(self.chat.id, self.loc.get("choose_account_action"), reply_markup=keyboard)
+        while True:
+            cb = self.__wait_for_inlinekeyboard_callback()
+            if cb.data == "toggle_used":
+                acct.used = not acct.used
+                self.session.commit()
+            elif cb.data == "delete_account":
+                self.session.delete(acct)
+                self.session.commit()
+                self.bot.edit_message_text(self.chat.id, self.loc.get("success_account_deleted"),
+                                           message_id=msg.message_id)
+                return
+            elif cb.data == "cmd_done":
+                break
+            # refresh keyboard label
+            kb = telegram.InlineKeyboardMarkup([
+                [telegram.InlineKeyboardButton(self.loc.boolmoji(acct.used) + " " + self.loc.get("menu_toggle_used"),
+                                               callback_data="toggle_used")],
+                [telegram.InlineKeyboardButton(self.loc.get("menu_delete_account"),
+                                               callback_data="delete_account")],
+                [telegram.InlineKeyboardButton(self.loc.get("menu_done"), callback_data="cmd_done")]
+            ])
+            self.bot.edit_message_reply_markup(chat_id=self.chat.id,
+                                               message_id=msg.message_id,
+                                               reply_markup=kb)
+        self.bot.send_message(self.chat.id, self.loc.get("success_account_updated"))
+
+    def __accounts_menu(self):
+        """Manage the pool of accounts for each product."""
+        log.debug("Displaying __accounts_menu")
+
+        # 1) pick a category
+        cats = self.session.query(db.Category).order_by(db.Category.name).all()
+        buttons = [[telegram.KeyboardButton(c.name)] for c in cats]
+        buttons.append([telegram.KeyboardButton(self.loc.get("menu_cancel"))])
+        self.bot.send_message(self.chat.id,
+                              self.loc.get("ask_product_category"),
+                              reply_markup=telegram.ReplyKeyboardMarkup(buttons, one_time_keyboard=True))
+        sel = self.__wait_for_specific_message([c.name for c in cats] + [self.loc.get("menu_cancel")],
+                                               cancellable=True)
+        if isinstance(sel, CancelSignal) or sel == self.loc.get("menu_cancel"):
+            return
+        cat = next(c for c in cats if c.name == sel)
+
+        # 2) pick a product in that category
+        prods = (self.session.query(db.Product)
+                          .filter_by(deleted=False, category=cat)
+                          .order_by(db.Product.name)
+                          .all())
+        prod_buttons = [[telegram.KeyboardButton(p.name)] for p in prods]
+        prod_buttons.append([telegram.KeyboardButton(self.loc.get("menu_cancel"))])
+        self.bot.send_message(self.chat.id,
+                              self.loc.get("conversation_admin_select_product"),
+                              reply_markup=telegram.ReplyKeyboardMarkup(prod_buttons, one_time_keyboard=True))
+        sel2 = self.__wait_for_specific_message([p.name for p in prods] + [self.loc.get("menu_cancel")],
+                                                cancellable=True)
+        if isinstance(sel2, CancelSignal) or sel2 == self.loc.get("menu_cancel"):
+            return
+        prod = next(p for p in prods if p.name == sel2)
+
+        # 3) show existing accounts + “Add new”
+        accounts = self.session.query(db.Account).filter_by(product=prod).all()
+        # build buttons: one per acct, and one “➕ Add”
+        acct_buttons = [[telegram.KeyboardButton(f"{a.username}")] for a in accounts]
+        acct_buttons.insert(0, [telegram.KeyboardButton(self.loc.get("menu_add_account"))])
+        acct_buttons.append([telegram.KeyboardButton(self.loc.get("menu_cancel"))])
+        self.bot.send_message(self.chat.id,
+                              self.loc.get("manage_accounts_header", product=prod.name),
+                              reply_markup=telegram.ReplyKeyboardMarkup(acct_buttons, one_time_keyboard=True))
+        choice = self.__wait_for_specific_message(
+            [self.loc.get("menu_add_account")] +
+            [a.username for a in accounts] +
+            [self.loc.get("menu_cancel")],
+            cancellable=True
+        )
+        if isinstance(choice, CancelSignal) or choice == self.loc.get("menu_cancel"):
+            return
+
+        if choice == self.loc.get("menu_add_account"):
+            return self.__add_account_menu(prod)
+        else:
+            acct = next(a for a in accounts if a.username == choice)
+            return self.__edit_account_menu(acct)
+
 
     def __admin_menu(self):
         """Function called from the run method when the user is an administrator.
@@ -1072,6 +1257,7 @@ class Worker(threading.Thread):
             keyboard = []
             if self.admin.edit_products:
                 keyboard.append([self.loc.get("menu_products")])
+                keyboard.append([self.loc.get("menu_manage_accounts")])
                 keyboard.append([self.loc.get("menu_categories")])
             if self.admin.receive_orders:
                 keyboard.append([self.loc.get("menu_orders")])
@@ -1087,6 +1273,7 @@ class Worker(threading.Thread):
                                   reply_markup=telegram.ReplyKeyboardMarkup(keyboard, one_time_keyboard=True))
             # Wait for a reply from the user
             selection = self.__wait_for_specific_message([self.loc.get("menu_products"),
+                                                            self.loc.get("menu_manage_accounts"),
                                                           self.loc.get("menu_categories"),
                                                           self.loc.get("menu_orders"),
                                                           self.loc.get("menu_user_mode"),
@@ -1098,6 +1285,9 @@ class Worker(threading.Thread):
             if selection == self.loc.get("menu_products") and self.admin.edit_products:
                 # Open the products menu
                 self.__products_menu()
+            elif selection == self.loc.get("menu_manage_accounts") and self.admin.edit_products:
+                # Open the accounts menu
+                self.__accounts_menu()
             elif selection == self.loc.get("menu_categories") and self.admin.edit_products:
                 self.__categories_menu()
             # If the user has selected the Orders option and has the privileges to perform the action...

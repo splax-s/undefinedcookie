@@ -31,6 +31,37 @@ menu_add_category = "✨ New category"
 menu_rename_category = "✏️ Rename category"
 menu_delete_category = "❌ Delete category"
 
+auto_deliver_format = """
+✅ You’ve purchased <b>{product}</b>!
+
+Here are your credentials:
+• Username: <code>{username}</code>
+• Password: <code>{password}</code>
+"""
+
+# When an account is successfully delivered
+deliver_account_message = "🎟 Here’s your <b>{product}</b> account:\n• Username: <code>{username}</code>\n• Password: <code>{password}</code>"
+
+# When no unused account remains
+deliver_account_missing = "⚠️ Sorry, no more <b>{product}</b> accounts are available at the moment."
+
+
+menu_manage_accounts = "📇 Manage Accounts"
+ask_account_username      = "🖋 Send the **username** for this account:"
+ask_account_password      = "🔒 Send the **password** for this account:"
+menu_add_account          = "➕ Add Account"
+manage_accounts_header    = "Accounts for <b>{product}</b>:"
+edit_account_header       = "Account:\n• Username: <code>{username}</code>\n• Password: <code>{password}</code>\n• Used: {used}"
+choose_account_action     = "Toggle “Used” or Delete this account:"
+menu_toggle_used          = "Mark Used/Unused"
+menu_delete_account       = "🗑 Delete Account"
+success_account_added     = "✅ Added account <code>{username}</code> for {product}"
+success_account_deleted   = "✅ Account deleted"
+success_account_updated   = "✅ Account updated"
+
+# no more inventory left
+auto_deliver_soldout = "⚠️ Sorry, all {product} accounts are sold out right now."
+
 conversation_admin_categories = "What would you like to do with categories?"
 
 ask_new_category_name = "What should the new category be called?"
