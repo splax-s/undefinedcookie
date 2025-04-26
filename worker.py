@@ -746,7 +746,7 @@ class Worker(threading.Thread):
         for item in order.items:
             acct = (
                 self.session.query(db.Account)
-                .filter_by(product_id=item.product.id, used=False)
+                .filter_by(product=item.product, used=False)
                 .with_for_update()
                 .first()
             )
