@@ -20,14 +20,12 @@ TableDeclarativeBase = declarative_base()
 class Account(TableDeclarativeBase):
     __tablename__ = "accounts"
 
-    id          = Column(Integer, primary_key=True)
-    product_id  = Column(Integer, ForeignKey("products.id"), nullable=False)
-    username    = Column(String,  nullable=False)
-    password    = Column(String,  nullable=False)
-    used        = Column(Boolean, default=False, nullable=False)
-
-    # backref from Product
-    product     = relationship("Product", back_populates="accounts")
+    account_id = Column(Integer, primary_key=True)
+    product_id = Column(Integer, ForeignKey("products.id"), nullable=False)
+    product = relationship("Product", back_populates="accounts")
+    file_data = Column(LargeBinary, nullable=False)   # raw bytes of the .txt
+    filename  = Column(String, nullable=False)        # e.g. "cool_instagram.txt"
+    used      = Column(Boolean, default=False)
 
 
 # Define all the database tables using the sqlalchemy declarative base

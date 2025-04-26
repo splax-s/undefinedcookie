@@ -469,23 +469,29 @@ Here are your credentials:
 # no more inventory left
 auto_deliver_soldout = "⚠️ Sorry, all {product} accounts are sold out right now."
 
-menu_manage_accounts = "📇 Manage Accounts"
 ask_account_username      = "🖋 Send the **username** for this account:"
 ask_account_password      = "🔒 Send the **password** for this account:"
 menu_add_account          = "➕ Add Account"
-manage_accounts_header    = "Accounts for <b>{product}</b>:"
-edit_account_header       = "Account:\n• Username: <code>{username}</code>\n• Password: <code>{password}</code>\n• Used: {used}"
 choose_account_action     = "Toggle “Used” or Delete this account:"
 menu_toggle_used          = "Mark Used/Unused"
-menu_delete_account       = "🗑 Delete Account"
-success_account_added     = "✅ Added account <code>{username}</code> for {product}"
-success_account_deleted   = "✅ Account deleted"
 success_account_updated   = "✅ Account updated"
-# When an account is successfully delivered
-deliver_account_message = "🎟 Here’s your <b>{product}</b> account:\n• Username: <code>{username}</code>\n• Password: <code>{password}</code>"
 
-# When no unused account remains
-deliver_account_missing = "⚠️ Sorry, no more <b>{product}</b> accounts are available at the moment."
+menu_manage_accounts       = "👥 Manage Accounts"
+menu_add_account           = "➕ Add account file"
+menu_delete_account        = "🗑 Delete file"
+ask_account_file           = "Send me a .txt file for {product}:"
+manage_accounts_header     = "Manage account files for <b>{product}</b>"
+edit_account_header        = "Editing file: <code>{filename}</code>"
+success_account_added      = "✅ Added <code>{filename}</code> to {product}"
+success_account_deleted    = "🗑️ Deleted <code>{filename}</code>"
+error_invalid_file         = "⚠️ That isn’t a .txt file. Please send me a .txt."
+ask_account_file_batch       = "Please send me one or more .txt files for <b>{product}</b>.\nWhen you’re done, press ✅ Done."
+success_account_batch_done   = "All set! Finished uploading files for <b>{product}</b>."
+# When an account is successfully delivered
+deliver_account_message = "Here’s your {product} account file:\n<code>{filename}</code>"
+deliver_account_missing = "⚠️ Oops—no more {product} files are available right now!"
+ask_account_action   = "Do you want to Add new docs or View existing for <b>{product}</b>?"
+
 
 
 

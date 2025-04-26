@@ -18,6 +18,8 @@ import telegram
 import database as db
 import localization
 import nuconfig
+import io
+from telegram import InputFile
 
 log = logging.getLogger(__name__)
 
@@ -750,16 +752,21 @@ class Worker(threading.Thread):
             )
             if acct:
                 # Send credentials
-                self.bot.send_message(
-                    self.chat.id,
-                    self.loc.get(
+                bio = io.BytesIO(acct.file_data)
+                bio.name = acct.filename   # e.g. "instagram_account_123.txt"
+
+                # send it
+                self.bot.send_document(
+                    chat_id=self.chat.id,
+                    document=InputFile(bio, filename=acct.filename),
+                    caption=self.loc.get(
                         "deliver_account_message",
                         product=item.product.name,
-                        username=acct.username,
-                        password=acct.password
+                        filename=acct.filename
                     ),
-                    parse_mode=telegram.constants.ParseMode.HTML
+                    parse_mode="HTML"
                 )
+
                 acct.used = True
             else:
                 # Out of stock for this product
@@ -1118,122 +1125,188 @@ class Worker(threading.Thread):
         
 
     def __add_account_menu(self, product: db.Product):
-        """Prompt manager to add a new Account for a product."""
-        cancel = telegram.InlineKeyboardMarkup(
-            [[telegram.InlineKeyboardButton(self.loc.get("menu_cancel"), callback_data="cmd_cancel")]]
-        )
-        # ask username
-        self.bot.send_message(self.chat.id, self.loc.get("ask_account_username"), reply_markup=cancel)
-        username = self.__wait_for_regex(r"(.+)", cancellable=True)
-        if isinstance(username, CancelSignal): return
-        # ask password
-        self.bot.send_message(self.chat.id, self.loc.get("ask_account_password"), reply_markup=cancel)
-        password = self.__wait_for_regex(r"(.+)", cancellable=True)
-        if isinstance(password, CancelSignal): return
+        """Upload one or more .txt files for this product, until the admin presses Done."""
+        log.debug("Displaying __add_account_menu")
 
-        acct = db.Account(product=product,
-                          username=username,
-                          password=password,
-                          used=False)
-        self.session.add(acct)
-        self.session.commit()
-        self.bot.send_message(self.chat.id,
-                              self.loc.get("success_account_added",
-                                           product=product.name,
-                                           username=username))
-    
-    def __edit_account_menu(self, acct: db.Account):
-        """Allow editing or deleting an existing Account."""
-        cancel = telegram.InlineKeyboardMarkup(
-            [[telegram.InlineKeyboardButton(self.loc.get("menu_cancel"), callback_data="cmd_cancel")]]
-        )
-        # show current creds
+        # Build a 2-button inline keyboard: Done / Cancel
+        kb = telegram.InlineKeyboardMarkup([
+            [ telegram.InlineKeyboardButton(self.loc.get("menu_done"),    callback_data="done")    ],
+            [ telegram.InlineKeyboardButton(self.loc.get("menu_cancel"),  callback_data="cmd_cancel")],
+        ])
+
+        # Send the initial prompt
         self.bot.send_message(
             self.chat.id,
-            self.loc.get("edit_account_header",
-                         username=acct.username,
-                         password=acct.password,
-                         used="yes" if acct.used else "no"),
-            reply_markup=cancel
+            self.loc.get("ask_account_file_batch", product=product.name),
+            reply_markup=kb
         )
-        # toggle “used”?
-        keyboard = telegram.InlineKeyboardMarkup([
-            [telegram.InlineKeyboardButton(self.loc.get("menu_toggle_used"), callback_data="toggle_used")],
-            [telegram.InlineKeyboardButton(self.loc.get("menu_delete_account"), callback_data="delete_account")],
+
+        while True:
+            update = self.__receive_next_update()
+
+            # Cancel pressed?
+            if isinstance(update, CancelSignal):
+                return
+
+            # Inline button pressed?
+            if getattr(update, "callback_query", None):
+                cb = update.callback_query
+                self.bot.answer_callback_query(cb.id)
+                if cb.data == "done":
+                    self.bot.send_message(
+                        self.chat.id,
+                        self.loc.get("success_account_batch_done", product=product.name)
+                    )
+                    return
+                else:
+                    continue
+
+            # Document upload?
+            msg = getattr(update, "message", None)
+            if msg and msg.document:
+                doc = msg.document
+                if not doc.file_name.lower().endswith(".txt"):
+                    self.bot.send_message(
+                        self.chat.id,
+                        self.loc.get("error_invalid_file", default="⚠️ Please send a .txt file.")
+                    )
+                    continue
+
+                # Download
+                file_obj = self.bot.get_file(doc.file_id)
+                data = file_obj.download_as_bytearray()
+
+                # Persist
+                acct = db.Account(
+                    product   = product,
+                    file_data = bytes(data),
+                    filename  = doc.file_name,
+                    used      = False
+                )
+                self.session.add(acct)
+                self.session.commit()
+
+                self.bot.send_message(
+                    self.chat.id,
+                    self.loc.get(
+                        "success_account_added",
+                        product=product.name,
+                        filename=doc.file_name
+                    )
+                )
+                # and loop back for the next file (or Done)
+
+            else:
+                # ignore anything else
+                continue
+    
+    def __edit_account_menu(self, account: db.Account):
+        """Delete or toggle used/unused on an existing file."""
+        menu = telegram.InlineKeyboardMarkup([
+            [telegram.InlineKeyboardButton(self.loc.get("menu_delete_account"), callback_data="delete")],
+            [telegram.InlineKeyboardButton(
+                f"{self.loc.boolmoji(account.used)} {self.loc.get('menu_toggle_used')}",
+                callback_data="toggle_used"
+            )],
             [telegram.InlineKeyboardButton(self.loc.get("menu_done"), callback_data="cmd_done")]
         ])
-        msg = self.bot.send_message(self.chat.id, self.loc.get("choose_account_action"), reply_markup=keyboard)
+        msg = self.bot.send_message(
+            self.chat.id,
+            self.loc.get("edit_account_header", filename=account.filename),
+            reply_markup=menu
+        )
         while True:
             cb = self.__wait_for_inlinekeyboard_callback()
-            if cb.data == "toggle_used":
-                acct.used = not acct.used
+            if cb.data == "delete":
+                self.session.delete(account)
                 self.session.commit()
-            elif cb.data == "delete_account":
-                self.session.delete(acct)
-                self.session.commit()
-                self.bot.edit_message_text(self.chat.id, self.loc.get("success_account_deleted"),
-                                           message_id=msg.message_id)
+                self.bot.edit_message_text(
+                    chat_id=self.chat.id,
+                    message_id=msg.message_id,
+                    text=self.loc.get("success_account_deleted", filename=account.filename)
+                )
                 return
+            elif cb.data == "toggle_used":
+                account.used = not account.used
+                self.session.commit()
+                # update that one button label
+                menu.inline_keyboard[1][0].text = (
+                    f"{self.loc.boolmoji(account.used)} {self.loc.get('menu_toggle_used')}"
+                )
+                self.bot.edit_message_reply_markup(
+                    chat_id=self.chat.id,
+                    message_id=msg.message_id,
+                    reply_markup=menu
+                )
             elif cb.data == "cmd_done":
-                break
-            # refresh keyboard label
-            kb = telegram.InlineKeyboardMarkup([
-                [telegram.InlineKeyboardButton(self.loc.boolmoji(acct.used) + " " + self.loc.get("menu_toggle_used"),
-                                               callback_data="toggle_used")],
-                [telegram.InlineKeyboardButton(self.loc.get("menu_delete_account"),
-                                               callback_data="delete_account")],
-                [telegram.InlineKeyboardButton(self.loc.get("menu_done"), callback_data="cmd_done")]
-            ])
-            self.bot.edit_message_reply_markup(chat_id=self.chat.id,
-                                               message_id=msg.message_id,
-                                               reply_markup=kb)
-        self.bot.send_message(self.chat.id, self.loc.get("success_account_updated"))
+                self.bot.edit_message_reply_markup(
+                    chat_id=self.chat.id,
+                    message_id=msg.message_id,
+                    reply_markup=None
+                )
+                return
 
     def __accounts_menu(self):
-        """Manage the pool of accounts for each product."""
+        """Manage the pool of .txt account files for each product."""
         log.debug("Displaying __accounts_menu")
 
-        # 1) pick a category
+        # 1) Pick a category
         cats = self.session.query(db.Category).order_by(db.Category.name).all()
         buttons = [[telegram.KeyboardButton(c.name)] for c in cats]
         buttons.append([telegram.KeyboardButton(self.loc.get("menu_cancel"))])
-        self.bot.send_message(self.chat.id,
-                              self.loc.get("ask_product_category"),
-                              reply_markup=telegram.ReplyKeyboardMarkup(buttons, one_time_keyboard=True))
-        sel = self.__wait_for_specific_message([c.name for c in cats] + [self.loc.get("menu_cancel")],
-                                               cancellable=True)
+        self.bot.send_message(
+            self.chat.id,
+            self.loc.get("ask_product_category"),
+            reply_markup=telegram.ReplyKeyboardMarkup(buttons, one_time_keyboard=True)
+        )
+        sel = self.__wait_for_specific_message(
+            [c.name for c in cats] + [self.loc.get("menu_cancel")],
+            cancellable=True
+        )
         if isinstance(sel, CancelSignal) or sel == self.loc.get("menu_cancel"):
             return
         cat = next(c for c in cats if c.name == sel)
 
-        # 2) pick a product in that category
-        prods = (self.session.query(db.Product)
-                          .filter_by(deleted=False, category=cat)
-                          .order_by(db.Product.name)
-                          .all())
+        # 2) Pick a product in that category
+        prods = (
+            self.session.query(db.Product)
+                .filter_by(deleted=False, category=cat)
+                .order_by(db.Product.name)
+                .all()
+        )
         prod_buttons = [[telegram.KeyboardButton(p.name)] for p in prods]
         prod_buttons.append([telegram.KeyboardButton(self.loc.get("menu_cancel"))])
-        self.bot.send_message(self.chat.id,
-                              self.loc.get("conversation_admin_select_product"),
-                              reply_markup=telegram.ReplyKeyboardMarkup(prod_buttons, one_time_keyboard=True))
-        sel2 = self.__wait_for_specific_message([p.name for p in prods] + [self.loc.get("menu_cancel")],
-                                                cancellable=True)
+        self.bot.send_message(
+            self.chat.id,
+            self.loc.get("conversation_admin_select_product"),
+            reply_markup=telegram.ReplyKeyboardMarkup(prod_buttons, one_time_keyboard=True)
+        )
+        sel2 = self.__wait_for_specific_message(
+            [p.name for p in prods] + [self.loc.get("menu_cancel")],
+            cancellable=True
+        )
         if isinstance(sel2, CancelSignal) or sel2 == self.loc.get("menu_cancel"):
             return
         prod = next(p for p in prods if p.name == sel2)
 
-        # 3) show existing accounts + “Add new”
-        accounts = self.session.query(db.Account).filter_by(product=prod).all()
-        # build buttons: one per acct, and one “➕ Add”
-        acct_buttons = [[telegram.KeyboardButton(f"{a.username}")] for a in accounts]
-        acct_buttons.insert(0, [telegram.KeyboardButton(self.loc.get("menu_add_account"))])
+        # 3) Show existing account-files + “Add new”
+        accounts = (
+            self.session.query(db.Account)
+                .filter_by(product=prod)
+                .order_by(db.Account.account_id)
+                .all()
+        )
+        acct_buttons = [[telegram.KeyboardButton(self.loc.get("menu_add_account"))]]
+        acct_buttons += [[telegram.KeyboardButton(a.filename)] for a in accounts]
         acct_buttons.append([telegram.KeyboardButton(self.loc.get("menu_cancel"))])
-        self.bot.send_message(self.chat.id,
-                              self.loc.get("manage_accounts_header", product=prod.name),
-                              reply_markup=telegram.ReplyKeyboardMarkup(acct_buttons, one_time_keyboard=True))
+        self.bot.send_message(
+            self.chat.id,
+            self.loc.get("manage_accounts_header", product=prod.name),
+            reply_markup=telegram.ReplyKeyboardMarkup(acct_buttons, one_time_keyboard=True)
+        )
         choice = self.__wait_for_specific_message(
             [self.loc.get("menu_add_account")] +
-            [a.username for a in accounts] +
+            [a.filename for a in accounts] +
             [self.loc.get("menu_cancel")],
             cancellable=True
         )
@@ -1243,9 +1316,8 @@ class Worker(threading.Thread):
         if choice == self.loc.get("menu_add_account"):
             return self.__add_account_menu(prod)
         else:
-            acct = next(a for a in accounts if a.username == choice)
+            acct = next(a for a in accounts if a.filename == choice)
             return self.__edit_account_menu(acct)
-
 
     def __admin_menu(self):
         """Function called from the run method when the user is an administrator.
